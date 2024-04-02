@@ -22,6 +22,13 @@ from IPython.display import display
 from PIL import Image
 from torch.cuda import amp
 
+
+import torch.nn.functional as F
+from typing import Optional, List
+import copy
+from copy import deepcopy
+from ...utils import common_utils, spconv_utils
+
 from utils import TryExcept
 from utils.dataloaders import exif_transpose, letterbox
 from utils.general import (LOGGER, ROOT, Profile, check_requirements, check_suffix, check_version, colorstr,
@@ -81,6 +88,35 @@ class ADown(nn.Module):
         x2 = torch.nn.functional.max_pool2d(x2, 3, 2, 1)
         x2 = self.cv2(x2)
         return torch.cat((x1, x2), 1)
+    
+class Attention_Layer(nn.Module):
+
+    def __init__(self, hidden_dim):
+        super(Attention_Layer, self).__init__()
+
+        self.hidden_dim = hidden_dim
+
+        self.Q_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.K_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.V_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
+
+    def forward(self, inputs):
+
+
+        Q = self.Q_linear(inputs)
+        K = self.K_linear(inputs).permute(0, 2, 1)
+        V = self.V_linear(inputs)
+
+        alpha = torch.matmul(Q, K)
+
+        weights = F.softmax(alpha, dim=2)
+
+        out = torch.matmul(alpha, V)
+
+        out = torch.mean(out, -2)
+
+        return weights
+
 
 
 class RepConvN(nn.Module):

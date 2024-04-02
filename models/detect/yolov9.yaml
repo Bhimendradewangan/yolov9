@@ -41,6 +41,8 @@ backbone:
 
    # elan-2 block
    [-1, 1, RepNCSPELAN4, [512, 512, 256, 1]],  # 9
+
+   
   ]
 
 # YOLOv9 head
