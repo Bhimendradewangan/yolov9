@@ -47,7 +47,7 @@ class Detect(nn.Module):
         self.cv2 = nn.ModuleList(
             nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch)
         self.cv3 = nn.ModuleList(
-            nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch)
+            nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1),Attention_Layer(c3)) for x in ch)
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
 
     def forward(self, x):
@@ -213,7 +213,7 @@ class DualDDetect(nn.Module):
         self.cv4 = nn.ModuleList(
             nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3, g=4), nn.Conv2d(c4, 4 * self.reg_max, 1, groups=4)) for x in ch[self.nl:])
         self.cv5 = nn.ModuleList(
-            nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, self.nc, 1)) for x in ch[self.nl:])
+            nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, self.nc, 1),Attention_Layer(c5)) for x in ch[self.nl:])
         self.dfl = DFL(self.reg_max)
         self.dfl2 = DFL(self.reg_max)
 
@@ -287,7 +287,7 @@ class TripleDetect(nn.Module):
         self.cv6 = nn.ModuleList(
             nn.Sequential(Conv(x, c6, 3), Conv(c6, c6, 3), nn.Conv2d(c6, 4 * self.reg_max, 1)) for x in ch[self.nl*2:self.nl*3])
         self.cv7 = nn.ModuleList(
-            nn.Sequential(Conv(x, c7, 3), Conv(c7, c7, 3), nn.Conv2d(c7, self.nc, 1)) for x in ch[self.nl*2:self.nl*3])
+            nn.Sequential(Conv(x, c7, 3), Conv(c7, c7, 3), nn.Conv2d(c7, self.nc, 1),Attention_Layer(c7)) for x in ch[self.nl*2:self.nl*3])
         self.dfl = DFL(self.reg_max)
         self.dfl2 = DFL(self.reg_max)
         self.dfl3 = DFL(self.reg_max)
@@ -369,7 +369,7 @@ class TripleDDetect(nn.Module):
             nn.Sequential(Conv(x, c6, 3), Conv(c6, c6, 3, g=4), 
                           nn.Conv2d(c6, 4 * self.reg_max, 1, groups=4)) for x in ch[self.nl*2:self.nl*3])
         self.cv7 = nn.ModuleList(
-            nn.Sequential(Conv(x, c7, 3), Conv(c7, c7, 3), nn.Conv2d(c7, self.nc, 1)) for x in ch[self.nl*2:self.nl*3])
+            nn.Sequential(Conv(x, c7, 3), Conv(c7, c7, 3), nn.Conv2d(c7, self.nc, 1),Attention_Layer(c7)) for x in ch[self.nl*2:self.nl*3])
         self.dfl = DFL(self.reg_max)
         self.dfl2 = DFL(self.reg_max)
         self.dfl3 = DFL(self.reg_max)
