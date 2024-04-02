@@ -109,13 +109,13 @@ class Attention_Layer(nn.Module):
 
         alpha = torch.matmul(Q, K)
 
-        weights = F.softmax(alpha, dim=2)
+        weight = F.softmax(alpha, dim=2)
 
         out = torch.matmul(alpha, V)
 
         out = torch.mean(out, -2)
 
-        return weights
+        return weight
 
 
 
