@@ -88,33 +88,72 @@ class ADown(nn.Module):
         x2 = self.cv2(x2)
         return torch.cat((x1, x2), 1)
     
+# class Attention_Layer(nn.Module):
+
+#     def __init__(self, hidden_dim):
+#         super(Attention_Layer, self).__init__()
+
+#         self.hidden_dim = hidden_dim
+
+#         self.Q_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
+#         self.K_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
+#         self.V_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
+
+#     def forward(self, inputs):
+
+
+#         Q = self.Q_linear(inputs)
+#         K = self.K_linear(inputs).permute(0, 2, 1)
+#         V = self.V_linear(inputs)
+
+#         alpha = torch.matmul(Q, K)
+
+#         weight = F.softmax(alpha, dim=2)
+
+#         out = torch.matmul(alpha, V)
+
+#         out = torch.mean(out, -2)
+
+#         return weight
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 class Attention_Layer(nn.Module):
 
-    def __init__(self, hidden_dim):
+    def __init__(self, in_channels):
         super(Attention_Layer, self).__init__()
 
-        self.hidden_dim = hidden_dim
+        self.in_channels = in_channels
 
-        self.Q_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
-        self.K_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
-        self.V_linear = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.Q_linear = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1, bias=False)
+        self.K_linear = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1, bias=False)
+        self.V_linear = nn.Conv2d(in_channels, in_channels, kernel_size=1, bias=False)
 
     def forward(self, inputs):
 
+        batch_size, channels, height, width = inputs.size()
 
-        Q = self.Q_linear(inputs)
-        K = self.K_linear(inputs).permute(0, 2, 1)
-        V = self.V_linear(inputs)
+        # Projecting inputs into query (Q), key (K), and value (V) spaces
+        Q = self.Q_linear(inputs).view(batch_size, -1, height * width).permute(0, 2, 1)  # [batch_size, height*width, channels/8]
+        K = self.K_linear(inputs).view(batch_size, -1, height * width)  # [batch_size, channels/8, height*width]
+        V = self.V_linear(inputs).view(batch_size, -1, height * width)  # [batch_size, channels, height*width]
 
-        alpha = torch.matmul(Q, K)
+        # Compute attention scores
+        alpha = torch.bmm(Q, K)  # [batch_size, height*width, height*width]
 
-        weight = F.softmax(alpha, dim=2)
+        # Apply softmax to get attention weights
+        weight = F.softmax(alpha, dim=2)  # [batch_size, height*width, height*width]
 
-        out = torch.matmul(alpha, V)
+        # Compute attention-weighted values
+        out = torch.bmm(weight, V.permute(0, 2, 1))  # [batch_size, height*width, channels]
 
-        out = torch.mean(out, -2)
+        # Reshape and take mean along the second dimension
+        out = out.view(batch_size, channels, height, width)
+        out = torch.mean(out, dim=1, keepdim=True)
 
-        return weight
+        return out, weight
 
 
 
