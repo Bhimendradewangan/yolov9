@@ -115,46 +115,79 @@ class ADown(nn.Module):
 #         out = torch.mean(out, -2)
 
 #         return weight
+#,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,...........................................
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+
+# class Attention_Layer(nn.Module):
+
+#     def __init__(self, in_channels):
+#         super(Attention_Layer, self).__init__()
+
+#         self.in_channels = in_channels
+
+#         self.Q_linear = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1, bias=False)
+#         self.K_linear = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1, bias=False)
+#         self.V_linear = nn.Conv2d(in_channels, in_channels, kernel_size=1, bias=False)
+
+#     def forward(self, inputs):
+
+#         batch_size, channels, height, width = inputs.size()
+
+#         # Projecting inputs into query (Q), key (K), and value (V) spaces
+#         Q = self.Q_linear(inputs).view(batch_size, -1, height * width).permute(0, 2, 1)  # [batch_size, height*width, channels/8]
+#         K = self.K_linear(inputs).view(batch_size, -1, height * width)  # [batch_size, channels/8, height*width]
+#         V = self.V_linear(inputs).view(batch_size, -1, height * width)  # [batch_size, channels, height*width]
+
+#         # Compute attention scores
+#         alpha = torch.bmm(Q, K)  # [batch_size, height*width, height*width]
+
+#         # Apply softmax to get attention weights
+#         weight = F.softmax(alpha, dim=2)  # [batch_size, height*width, height*width]
+
+#         # Compute attention-weighted values
+#         out = torch.bmm(weight, V.permute(0, 2, 1))  # [batch_size, height*width, channels]
+
+#         # Reshape and take mean along the second dimension
+#         out = out.view(batch_size, channels, height, width)
+#         out = torch.mean(out, dim=1, keepdim=True)
+
+#         return out, weight
+
+# ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,............................
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class Attention_Layer(nn.Module):
+class SelfAttention(nn.Module):
+    def __init__(self, in_channels, reduction_ratio=8):
+        super(SelfAttention, self).__init__()
 
-    def __init__(self, in_channels):
-        super(Attention_Layer, self).__init__()
+        self.query_conv = nn.Conv2d(in_channels, in_channels // reduction_ratio, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels, in_channels // reduction_ratio, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
 
-        self.in_channels = in_channels
+    def forward(self, x):
+        batch_size, channels, height, width = x.size()
 
-        self.Q_linear = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1, bias=False)
-        self.K_linear = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1, bias=False)
-        self.V_linear = nn.Conv2d(in_channels, in_channels, kernel_size=1, bias=False)
+        # Project input tensors to query, key, and value
+        proj_query = self.query_conv(x).view(batch_size, -1, height * width).permute(0, 2, 1)  # B x (N) x C
+        proj_key = self.key_conv(x).view(batch_size, -1, height * width)  # B x C x (N)
+        energy = torch.bmm(proj_query, proj_key)  # Batch matrix multiplication
+        attention = F.softmax(energy, dim=-1)  # Attention map
+        proj_value = self.value_conv(x).view(batch_size, -1, height * width)  # B x C x (N)
 
-    def forward(self, inputs):
-
-        batch_size, channels, height, width = inputs.size()
-
-        # Projecting inputs into query (Q), key (K), and value (V) spaces
-        Q = self.Q_linear(inputs).view(batch_size, -1, height * width).permute(0, 2, 1)  # [batch_size, height*width, channels/8]
-        K = self.K_linear(inputs).view(batch_size, -1, height * width)  # [batch_size, channels/8, height*width]
-        V = self.V_linear(inputs).view(batch_size, -1, height * width)  # [batch_size, channels, height*width]
-
-        # Compute attention scores
-        alpha = torch.bmm(Q, K)  # [batch_size, height*width, height*width]
-
-        # Apply softmax to get attention weights
-        weight = F.softmax(alpha, dim=2)  # [batch_size, height*width, height*width]
-
-        # Compute attention-weighted values
-        out = torch.bmm(weight, V.permute(0, 2, 1))  # [batch_size, height*width, channels]
-
-        # Reshape and take mean along the second dimension
+        # Apply attention to value
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
         out = out.view(batch_size, channels, height, width)
-        out = torch.mean(out, dim=1, keepdim=True)
 
-        return out, weight
+        # Apply gamma to the attended feature map and add it to the original input
+        out = self.gamma * out + x
 
+        return out
 
 
 class RepConvN(nn.Module):
