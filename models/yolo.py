@@ -4,6 +4,10 @@ import platform
 import sys
 from copy import deepcopy
 from pathlib import Path
+# sys.path.append('/path/to/common_module_directory')
+# from common import SelfAttention
+  # Assuming the self-attention module is implemented in a file named common.py
+
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLO root directory
@@ -27,13 +31,6 @@ except ImportError:
 
 
 class Detect(nn.Module):
-    # YOLO Detect head for detection models
-    dynamic = False  # force grid reconstruction
-    export = False  # export mode
-    shape = None
-    anchors = torch.empty(0)  # init
-    strides = torch.empty(0)  # init
-
     def __init__(self, nc=80, ch=(), inplace=True):  # detection layer
         super().__init__()
         self.nc = nc  # number of classes
@@ -50,10 +47,18 @@ class Detect(nn.Module):
             nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch)
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
 
+        # Define the self-attention module
+        self.attention = SelfAttention(c2 + c3)  # Adjust the input channels for the self-attention module
+
+    # Other methods...
+
     def forward(self, x):
         shape = x[0].shape  # BCHW
         for i in range(self.nl):
             x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
+
+            # Apply self-attention module
+            x[i] = self.attention(x[i])
         if self.training:
             return x
         elif self.dynamic or self.shape != shape:
@@ -667,7 +672,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         Conv.default_act = eval(act)  # redefine default activation, i.e. Conv.default_act = nn.SiLU()
         LOGGER.info(f"{colorstr('activation:')} {act}")  # print
     na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
-    no = na * (nc + 5)  # number of outputs per anchor
+    no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
 
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
     for i, (f, n, m, args) in enumerate(d['backbone'] + d['head']):  # from, number, module, args
@@ -677,8 +682,10 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 args[j] = eval(a) if isinstance(a, str) else a  # eval strings
 
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
-        if m in {Conv, AConv, ConvTranspose, Bottleneck, SPP, SPPF, DWConv, BottleneckCSP, nn.ConvTranspose2d,
-                 DWConvTranspose2d, SPPCSPC, ADown, RepNCSPELAN4, SPPELAN}:
+        if m in {
+            Conv, AConv, ConvTranspose, 
+            Bottleneck, SPP, SPPF, DWConv, BottleneckCSP, nn.ConvTranspose2d, DWConvTranspose2d, SPPCSPC, ADown,
+            RepNCSPELAN4, SPPELAN}:
             c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
@@ -701,41 +708,33 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             args = [c1, c2, *args[1:]]
         elif m is CBFuse:
             c2 = ch[f[-1]]
+        # TODO: channel, gw, gd
         elif m in {Detect, DualDetect, TripleDetect, DDetect, DualDDetect, TripleDDetect, Segment}:
             args.append([ch[x] for x in f])
+            # if isinstance(args[1], int):  # number of anchors
+            #     args[1] = [list(range(args[1] * 2))] * len(f)
             if m in {Segment}:
                 args[2] = make_divisible(args[2] * gw, 8)
         elif m is Contract:
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
             c2 = ch[f] // args[0] ** 2
+        elif m is SelfAttention:  # Insert self-attention module
+            args = [ch[f]]  # Adjust arguments if needed
         else:
             c2 = ch[f]
 
-        if m in {Conv, AConv, ConvTranspose, Bottleneck, SPP, SPPF, DWConv, BottleneckCSP, nn.ConvTranspose2d,
-                 DWConvTranspose2d, SPPCSPC, ADown, RepNCSPELAN4, SPPELAN}:
-            # Here, you can insert the Attention_Layer after the desired convolutional layer
-            # For example, after a specific layer in the backbone or head
-            # For demonstration, let's add it after the first convolutional layer
-            if i == 0:  # Add attention after the first convolutional layer
-                layers.append(m(*args))
-                layers.append(Attention_Layer(args[1]))  # Assuming args[1] is the output channels of the layer
-            else:
-                layers.append(m(*args))
-        else:
-            layers.append(m(*args))
-
+        m_ = nn.Sequential(*(m(*args) for _ in range(n))) if n > 1 else m(*args)  # module
         t = str(m)[8:-2].replace('__main__.', '')  # module type
-        np = sum(x.numel() for x in layers[-1].parameters())  # number params
-        layers[-1].i, layers[-1].f, layers[-1].type, layers[-1].np = i, f, t, np  # attach index, 'from' index, type, number params
+        np = sum(x.numel() for x in m_.parameters())  # number params
+        m_.i, m_.f, m_.type, m_.np = i, f, t, np  # attach index, 'from' index, type, number params
         LOGGER.info(f'{i:>3}{str(f):>18}{n_:>3}{np:10.0f}  {t:<40}{str(args):<30}')  # print
         save.extend(x % i for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist
+        layers.append(m_)
         if i == 0:
             ch = []
         ch.append(c2)
-
     return nn.Sequential(*layers), sorted(save)
-
 
 
 if __name__ == '__main__':
